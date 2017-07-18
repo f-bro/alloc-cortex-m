@@ -56,7 +56,17 @@ pub struct CortexMHeap {
 
 impl CortexMHeap {
 
-    /// Crate a new heap and initializes it.
+    /// Crate a new UNINITIALIZED heap allocator
+    ///
+    /// You must initialize this heap using the
+    /// [`init`](struct.CortexMHeap.html#method.init) method before using the allocator.
+    pub unsafe fn empty() -> CortexMHeap {
+        CortexMHeap {
+            heap: Mutex::new(Heap::empty()),
+        }
+    }
+
+    /// Initializes the heap
     ///
     /// This function must be called BEFORE you run any code that makes use of the
     /// allocator.
@@ -79,16 +89,11 @@ impl CortexMHeap {
     ///
     /// - This function must be called exactly ONCE.
     /// - `end_addr` > `start_addr`
-    pub unsafe fn new(start_addr: *mut usize, end_addr: *mut usize) -> CortexMHeap {
+    pub unsafe fn init(&self, start_addr: *mut usize, end_addr: *mut usize){
         let start = start_addr as usize;
         let end = end_addr as usize;
         let size = end - start;
-        let heap = Mutex::new(Heap::empty());
-        heap.lock(|heap| heap.init(start, size));
-
-        CortexMHeap {
-            heap: heap,
-        }
+        self.heap.lock(|heap| heap.init(start, size));
     }
 }
 
