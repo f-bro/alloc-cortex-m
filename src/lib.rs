@@ -97,7 +97,7 @@ impl CortexMHeap {
     }
 }
 
-unsafe impl Alloc for CortexMHeap {
+unsafe impl<'a> Alloc for &'a CortexMHeap {
     unsafe fn alloc(&mut self, layout: Layout) -> Result<*mut u8, AllocErr> {
         self.heap.lock(|heap| {
             heap.allocate_first_fit(layout)
