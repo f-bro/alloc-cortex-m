@@ -60,7 +60,7 @@ impl CortexMHeap {
     ///
     /// You must initialize this heap using the
     /// [`init`](struct.CortexMHeap.html#method.init) method before using the allocator.
-    pub fn empty() -> CortexMHeap {
+    pub const fn empty() -> CortexMHeap {
         CortexMHeap {
             heap: Mutex::new(Heap::empty()),
         }
