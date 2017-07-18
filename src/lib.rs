@@ -89,11 +89,9 @@ impl CortexMHeap {
     ///
     /// - This function must be called exactly ONCE.
     /// - `end_addr` > `start_addr`
-    pub unsafe fn init(&self, start_addr: *mut usize, end_addr: *mut usize){
-        let start = start_addr as usize;
-        let end = end_addr as usize;
-        let size = end - start;
-        self.heap.lock(|heap| heap.init(start, size));
+    pub unsafe fn init(&self, start_addr: usize, end_addr: usize){
+        let size = end_addr - start_addr;
+        self.heap.lock(|heap| heap.init(start_addr, size));
     }
 }
 
