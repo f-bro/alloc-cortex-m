@@ -37,121 +37,69 @@
 //! _heap_end = ORIGIN(SRAM) + LENGTH(SRAM) - _stack_size;
 //! ```
 
-#![allocator]
-#![feature(allocator)]
 #![feature(const_fn)]
 #![no_std]
+#![feature(alloc, allocator_api)]
 
 extern crate cortex_m;
 extern crate linked_list_allocator;
+extern crate alloc;
 
-use core::{cmp, ptr};
+use alloc::allocator::{Alloc, Layout, AllocErr};
 
 use linked_list_allocator::Heap;
 use cortex_m::interrupt::Mutex;
 
-/// A global UNINITIALIZED heap allocator
-///
-/// You must initialize this heap using the
-/// [`init`](struct.Heap.html#method.init) method before using the allocator.
-static HEAP: Mutex<Heap> = Mutex::new(Heap::empty());
-
-/// Initializes the heap
-///
-/// This function must be called BEFORE you run any code that makes use of the
-/// allocator.
-///
-/// `start_addr` is the address where the heap will be located.
-///
-/// `end_addr` points to the end of the heap.
-///
-/// Note that:
-///
-/// - The heap grows "upwards", towards larger addresses. Thus `end_addr` must
-///   be larger than `start_addr`
-///
-/// - The size of the heap is `(end_addr as usize) - (start_addr as usize)`. The
-///   allocator won't use the byte at `end_addr`.
-///
-/// # Unsafety
-///
-/// Obey these or Bad Stuff will happen.
-///
-/// - This function must be called exactly ONCE.
-/// - `end_addr` > `start_addr`
-pub unsafe fn init(start_addr: *mut usize, end_addr: *mut usize) {
-    let start = start_addr as usize;
-    let end = end_addr as usize;
-    let size = end - start;
-    HEAP.lock(|heap| heap.init(start, size));
+pub struct CortexMHeap {
+    heap: Mutex<Heap>,
 }
 
-// Rust allocator interface
+impl CortexMHeap {
 
-#[doc(hidden)]
-#[no_mangle]
-/// Rust allocation function (c.f. malloc)
-pub extern "C" fn __rust_allocate(size: usize, align: usize) -> *mut u8 {
-    HEAP.lock(|heap| {
-        heap.allocate_first_fit(size, align).expect("out of memory")
-    })
-}
+    /// Crate a new heap and initializes it.
+    ///
+    /// This function must be called BEFORE you run any code that makes use of the
+    /// allocator.
+    ///
+    /// `start_addr` is the address where the heap will be located.
+    ///
+    /// `end_addr` points to the end of the heap.
+    ///
+    /// Note that:
+    ///
+    /// - The heap grows "upwards", towards larger addresses. Thus `end_addr` must
+    ///   be larger than `start_addr`
+    ///
+    /// - The size of the heap is `(end_addr as usize) - (start_addr as usize)`. The
+    ///   allocator won't use the byte at `end_addr`.
+    ///
+    /// # Unsafety
+    ///
+    /// Obey these or Bad Stuff will happen.
+    ///
+    /// - This function must be called exactly ONCE.
+    /// - `end_addr` > `start_addr`
+    pub unsafe fn new(start_addr: *mut usize, end_addr: *mut usize) -> CortexMHeap {
+        let start = start_addr as usize;
+        let end = end_addr as usize;
+        let size = end - start;
+        let heap = Mutex::new(Heap::empty());
+        heap.lock(|heap| heap.init(start, size));
 
-#[doc(hidden)]
-#[no_mangle]
-pub extern fn __rust_allocate_zeroed(size: usize, align: usize) -> *mut u8 {
-    let ptr = __rust_allocate(size, align);
-    if !ptr.is_null() {
-        unsafe {
-            ptr::write_bytes(ptr, 0, size);
+        CortexMHeap {
+            heap: heap,
         }
     }
-    ptr
 }
 
-/// Rust de-allocation function (c.f. free)
-#[doc(hidden)]
-#[no_mangle]
-pub extern "C" fn __rust_deallocate(ptr: *mut u8, size: usize, align: usize) {
-    HEAP.lock(|heap| unsafe { heap.deallocate(ptr, size, align) });
-}
+unsafe impl Alloc for CortexMHeap {
+    unsafe fn alloc(&mut self, layout: Layout) -> Result<*mut u8, AllocErr> {
+        self.heap.lock(|heap| {
+            heap.allocate_first_fit(layout)
+        })
+    }
 
-/// Rust re-allocation function (c.f. realloc)
-#[doc(hidden)]
-#[no_mangle]
-pub extern "C" fn __rust_reallocate(ptr: *mut u8,
-                                    size: usize,
-                                    new_size: usize,
-                                    align: usize)
-                                    -> *mut u8 {
-
-    // from: https://github.com/rust-lang/rust/blob/
-    //     c66d2380a810c9a2b3dbb4f93a830b101ee49cc2/
-    //     src/liballoc_system/lib.rs#L98-L101
-
-    let new_ptr = __rust_allocate(new_size, align);
-    unsafe { ptr::copy(ptr, new_ptr, cmp::min(size, new_size)) };
-    __rust_deallocate(ptr, size, align);
-    new_ptr
-}
-
-/// Rust re-allocation function which guarantees not to move the data
-/// somewhere else.
-#[doc(hidden)]
-#[no_mangle]
-pub extern "C" fn __rust_reallocate_inplace(_ptr: *mut u8,
-                                            size: usize,
-                                            _new_size: usize,
-                                            _align: usize)
-                                            -> usize {
-    size
-}
-
-/// Some allocators (pool allocators generally) over-allocate. This checks how
-/// much space there is at a location. Our allocator doesn't over allocate so
-/// this just returns `size`
-#[doc(hidden)]
-#[no_mangle]
-pub extern "C" fn __rust_usable_size(size: usize, _align: usize) -> usize {
-    size
+    unsafe fn dealloc(&mut self, ptr: *mut u8, layout: Layout) {
+        self.heap.lock(|heap| heap.deallocate(ptr, layout));
+    }
 }
